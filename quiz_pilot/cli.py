@@ -293,6 +293,24 @@ def cmd_clean(args):
     console.print("[bold green]✓ Zero-Artifact Cleanup Complete: All temporary cache, submissions, and screenshots wiped![/bold green]")
 
 
+def cmd_stats(args):
+    """Prints the telemetry scoreboard: tool calls, latency, estimated
+    tokens, and the packet memory hit rate (Phase 1 measurement)."""
+    from quiz_pilot.telemetry import default_telemetry_path, summarize
+    path = args.file or default_telemetry_path()
+    summary = summarize(path)
+    if args.json:
+        print(json.dumps(summary, separators=(",", ":")))
+        return
+    console.print(f"[bold cyan]Telemetry:[/bold cyan] {path}")
+    console.print(f"Tool calls: {summary['calls']}  Errors: {summary['errors']}")
+    console.print(f"Total time: {summary['total_elapsed_ms']} ms  "
+                  f"Avg/call: {summary['avg_elapsed_ms']} ms")
+    console.print(f"Estimated tokens (bytes/4): {summary['total_est_tokens']}")
+    if summary.get("packet_memory_hit_pct") is not None:
+        console.print(f"Packet memory hit rate: {summary['packet_memory_hit_pct']}%")
+
+
 def cmd_solve_all(args):
     """Solves and submits all open assessment tabs in parallel, or opens URLs and solves."""
     from quiz_pilot.tab_scheduler import solve_all_open_quizzes_sync, open_and_solve_parallel_sync, smart_multiworker_sync
@@ -507,6 +525,12 @@ def main():
     # clean
     p_clean = subparsers.add_parser("clean", help="Purge all temporary assessment cache, logs, and screenshots")
     p_clean.set_defaults(func=cmd_clean)
+
+    # stats
+    p_stats = subparsers.add_parser("stats", help="Show telemetry: tool calls, latency, estimated tokens, packet memory hit rate")
+    p_stats.add_argument("--file", type=str, default=None, help="Telemetry JSONL path (default: .assessment_cache/telemetry/tool_calls.jsonl)")
+    p_stats.add_argument("--json", action="store_true", help="Output raw JSON")
+    p_stats.set_defaults(func=cmd_stats)
 
     # solve-all
     p_sall = subparsers.add_parser("solve-all", aliases=["multiworker"], help="Concurrently solve open assessment tabs or open given URLs in parallel")

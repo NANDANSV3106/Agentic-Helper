@@ -442,7 +442,10 @@ class AsyncTabScheduler:
            - If multiple assessment tabs (>= 2) are already open, solves them concurrently.
         3. If only 1 tab is open (or tabs are on course / specialization homepages):
            - If tab URL is a Specialization (/specializations/<slug>):
-             Discovers child courses, opens them in separate tabs, and completes them concurrently.
+             Queues every child course's pending items course-by-course
+             into ONE shared pool of at most max_concurrency tabs, so a
+             course with fewer than max_concurrency pending items
+             backfills its free tabs from the next course.
            - If tab URL is a Single Course (/learn/<slug>):
              Crawls the syllabus to extract all incomplete module assignments,
              opens them across multiple browser tabs (up to max_concurrency),

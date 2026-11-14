@@ -11,8 +11,10 @@ Exposes native tools for Claude Desktop, Cursor, Antigravity, and AI Agents:
 - solve_diagram
 """
 
+import os
 import sys
 import json
+import time
 import asyncio
 from typing import Dict, Any, List, Optional
 from playwright.async_api import async_playwright
@@ -24,11 +26,13 @@ from quiz_pilot.diagram_parser import LocalDiagramParser
 from quiz_pilot.browser_launcher import launch_browser, is_browser_running, ensure_browser_visible_once
 from quiz_pilot.tab_scheduler import AsyncTabScheduler
 from quiz_pilot.programming_solver import ProgrammingAssignmentManager
+from quiz_pilot import exec_backend
 from quiz_pilot.peer_review_solver import PeerReviewManager
 from quiz_pilot.syllabus_crawler import SyllabusCrawler
 from quiz_pilot.direct_api_solver import CourseraDirectAPI
 from quiz_pilot.course_orchestrator import CourseOrchestrator
 from quiz_pilot.packet_mode import PacketManager
+from quiz_pilot.telemetry import record_tool_call, default_telemetry_path
 
 # Initialize helper engines
 attempt_mgr = FastAttemptManager()
@@ -57,6 +61,46 @@ def _register_page_provider(provider) -> None:
 # The programming manager keeps one persistent CDP connection; let every
 # browser tool ride it (registered here, after the registry exists).
 _register_page_provider(prog_manager.get_page)
+
+# ---------------------------------------------------------------------------
+# Tool profiles (Phase 1 token efficiency): the host only needs the tools
+# for the task at hand, but all 24 schemas otherwise sit in its context for
+# the whole session. The server filters tools/list by the profile named in
+# AGENTIC_TOOL_PROFILE and refuses out-of-profile calls with a clear error.
+# Default is "full" (all tools) so existing setups behave exactly as before;
+# see MCP_PROFILES.md for per-profile server configuration.
+# ---------------------------------------------------------------------------
+TOOL_PROFILES = {
+    "quiz": ["launch_browser", "prepare_packet", "apply_packet", "get_feedback"],
+    "course": ["launch_browser", "prepare_packet", "apply_packet", "get_feedback",
+               "crawl_syllabus", "smart_multiworker", "open_and_solve_parallel",
+               "auto_complete_entire_course", "auto_complete_specialization"],
+    "programming": ["launch_browser", "inspect_programming_task", "submit_code_file",
+                    "poll_autograder_results", "auto_solve_current_assignment", "exec_command"],
+    "peer": ["launch_browser", "submit_peer_assignment", "complete_peer_reviews",
+             "auto_solve_current_assignment"],
+    "solvers": ["solve_multicast", "solve_diagram"],
+    "full": None,  # None = every tool in TOOLS
+}
+
+
+def get_tool_profile() -> str:
+    profile = os.environ.get("AGENTIC_TOOL_PROFILE", "full").strip().lower()
+    return profile if profile in TOOL_PROFILES else "full"
+
+
+def active_tools():
+    names = TOOL_PROFILES[get_tool_profile()]
+    if names is None:
+        return TOOLS
+    return [t for t in TOOLS if t.get("name") in names]
+
+
+def _telemetry_path() -> str:
+    try:
+        return default_telemetry_path(attempt_mgr.base_cache_dir)
+    except Exception:
+        return default_telemetry_path()
 
 TOOLS = [
     {
@@ -367,6 +411,49 @@ TOOLS = [
         }
     },
     {
+        "name": "exec_command",
+        "description": "Runs a shell command for EXTERNAL programming assignments: compiling C++ (g++), running starter tests, Mininet topologies (mn), and the spec's CLI submission commands. Backend auto (default) uses WSL Ubuntu when present, else the native Windows toolchain (Git Bash / MinGW g++); backend wsl/native force one side. Mininet commands require WSL or a Linux VM. Windows paths are translated to /mnt/<drive>/ under WSL; use workdir for the starter-code folder. as_root runs as root under WSL (needed to start Open vSwitch). Never prompts for a password. If no C++ compiler is found, setup_toolchain (default true) downloads the portable MinGW toolchain into .tools/ - no admin, no system changes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to run, e.g. 'g++ -std=c++17 -o app main.cpp && ./app'"
+                },
+                "backend": {
+                    "type": "string",
+                    "description": "Execution backend: auto (WSL when present, else native Windows toolchain), wsl (WSL Ubuntu only), or native (Windows only). Mininet commands require wsl. (default: auto)",
+                    "default": "auto"
+                },
+                "workdir": {
+                    "type": "string",
+                    "description": "Working directory (Windows or WSL path) the command runs in"
+                },
+                "timeout_sec": {
+                    "type": "integer",
+                    "description": "Maximum seconds to wait (default: 300)",
+                    "default": 300
+                },
+                "as_root": {
+                    "type": "boolean",
+                    "description": "Run as root via wsl -u root (default: false). Use for service commands.",
+                    "default": False
+                },
+                "distro": {
+                    "type": "string",
+                    "description": "WSL distribution name (default: Ubuntu)",
+                    "default": "Ubuntu"
+                },
+                "setup_toolchain": {
+                    "type": "boolean",
+                    "description": "Native backend only: if no C++ compiler is found, download the portable MinGW toolchain into .tools/ (default: true)",
+                    "default": True
+                }
+            },
+            "required": ["command"]
+        }
+    },
+    {
         "name": "submit_peer_assignment",
         "description": "Uploads and submits a peer-graded assignment report (PDF) and optional video URL on Coursera.",
         "inputSchema": {
@@ -575,6 +662,37 @@ async def find_assessment_page(browser, target_keyword: Optional[str] = None):
 
 
 async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Profile gate + telemetry wrapper around _handle_call_tool_impl.
+
+    Out-of-profile calls are refused BEFORE any work runs, and every call
+    (success or failure) is timed and measured into the telemetry JSONL -
+    counts and sizes only, never content (see quiz_pilot/telemetry.py)."""
+    profile = get_tool_profile()
+    allowed = TOOL_PROFILES[profile]
+    if allowed is not None and name not in allowed:
+        refusal = {"isError": True, "content": [{"type": "text", "text": (
+            f"Tool '{name}' is not available in the '{profile}' tool profile. "
+            "Restart the MCP server with AGENTIC_TOOL_PROFILE set to the "
+            "matching profile (or 'full') to use it.")}]}
+        # A refusal is a wasted host turn - it belongs in the telemetry too.
+        record_tool_call(_telemetry_path(), tool=name, profile=profile,
+                         elapsed_ms=0.0, request_obj=arguments, response=refusal)
+        return refusal
+    start = time.perf_counter()
+    try:
+        result = await _handle_call_tool_impl(name, arguments)
+    except Exception:
+        record_tool_call(_telemetry_path(), tool=name, profile=profile,
+                         elapsed_ms=(time.perf_counter() - start) * 1000.0,
+                         request_obj=arguments, response=None, error=True)
+        raise
+    record_tool_call(_telemetry_path(), tool=name, profile=profile,
+                     elapsed_ms=(time.perf_counter() - start) * 1000.0,
+                     request_obj=arguments, response=result)
+    return result
+
+
+async def _handle_call_tool_impl(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     if name == "launch_browser":
         target_url = arguments.get("url", "https://www.coursera.org")
         port = int(arguments.get("port", 9222))
@@ -704,6 +822,20 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, An
         tab_kw = arguments.get("tab_keyword")
         pm = ProgrammingAssignmentManager(cdp_url=cdp_url)
         res = await pm.poll_autograder_results(tab_keyword=tab_kw, timeout_sec=t_sec)
+        return {"content": [{"type": "text", "text": _compact(res)}]}
+
+    if name in ("exec_command", "wsl_exec"):
+        # wsl_exec is the pre-rename alias: same handler, backend forced to wsl.
+        backend = "wsl" if name == "wsl_exec" else arguments.get("backend", "auto")
+        res = exec_backend.run_command(
+            command=arguments["command"],
+            workdir=arguments.get("workdir"),
+            backend=backend,
+            timeout_sec=int(arguments.get("timeout_sec", 300)),
+            distro=arguments.get("distro", "Ubuntu"),
+            as_root=bool(arguments.get("as_root", False)),
+            setup_toolchain=bool(arguments.get("setup_toolchain", True)),
+        )
         return {"content": [{"type": "text", "text": _compact(res)}]}
 
     if name == "submit_peer_assignment":
@@ -891,8 +1023,18 @@ async def _dispatch_browser_tool(name: str, arguments: Dict[str, Any], page, cdp
                 if _passed:
                     packet_mgr.delete_state(state["packet_id"])
                     receipt["packet_id"] = None
+                elif _attempt >= 10:
+                    # 10-attempt safety cap: stop honestly, do not burn more.
+                    receipt.update({"next_action": "CAP_REACHED", "retry_required": False,
+                                    "attempts_remaining": 0,
+                                    "next": "Safety cap of 10 attempts reached. Report this quiz as FAILED honestly - do not re-attempt it in this run."})
                 else:
-                    receipt["next"] = "Call prepare_packet again: it returns a delta packet with only the still-wrong questions (correct ones are now locked, wrong options eliminated)."
+                    # A FAILED quiz is UNFINISHED work. The receipt says so in
+                    # machine-readable fields, not just prose, so the host
+                    # agent cannot read it as "submitted, task done".
+                    receipt.update({"next_action": "RETRY", "retry_required": True,
+                                    "attempts_remaining": 10 - _attempt,
+                                    "next": f"FAILED (attempt {_attempt}/10) - this quiz is NOT done. You MUST call prepare_packet again in this same run: it returns a delta packet with only the still-wrong questions (correct ones are now locked, wrong options eliminated). Stop only on PASSED, the 10-attempt cap, a Coursera attempt lock, or nothing new to submit."})
             else:
                 receipt["status"] = "SUBMITTED_FEEDBACK_PENDING"
                 receipt["next"] = "Feedback not readable yet - call get_feedback, then record_quiz_analysis with this packet's quiz_id."
@@ -997,6 +1139,19 @@ async def _dispatch_browser_tool(name: str, arguments: Dict[str, Any], page, cdp
 
     elif name == "get_feedback":
         fb = await adapter.extract_feedback_async()
+        if isinstance(fb, dict):
+            _passed = fb.get("passed")
+            if _passed is None and fb.get("score_pct") is not None:
+                _passed = fb["score_pct"] >= 80.0
+            fb["status"] = "PASSED" if _passed is True else ("FAILED" if _passed is False else "UNKNOWN")
+            if _passed is False:
+                fb["next_action"] = "RETRY"
+                fb["retry_required"] = True
+                fb["next"] = ("FAILED - this quiz is NOT done. Re-attempt it in this same run: "
+                              "call prepare_packet for a delta packet (packet flow) or re-solve the wrong "
+                              "questions and resubmit (manual flow). Correct answers stay locked, wrong "
+                              "options stay eliminated. Stop only on PASSED, the 10-attempt cap, a Coursera "
+                              "attempt lock, or nothing new to submit.")
         return {"content": [{"type": "text", "text": _compact(fb)}]}
 
     return {"isError": True, "content": [{"type": "text", "text": f"Unknown browser tool: {name}"}]}
@@ -1023,7 +1178,7 @@ def run_mcp_server():
             resp = {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "result": {"tools": TOOLS}
+                "result": {"tools": active_tools()}
             }
         elif method == "tools/call":
             tool_name = params.get("name")

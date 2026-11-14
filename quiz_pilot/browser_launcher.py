@@ -30,6 +30,33 @@ from typing import Optional, List, Tuple
 CDP_DEFAULT_PORT = 9222
 
 
+# CREATE_BREAKAWAY_FROM_JOB value (subprocess defines the constant only on
+# win32; the literal keeps the flag computation testable on any platform).
+_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def _windows_spawn_flags() -> int:
+    """Creation flags for spawning the browser on Windows.
+
+    DETACHED_PROCESS + CREATE_NEW_PROCESS_GROUP detach the browser from
+    the launching console, but neither escapes the launching process's
+    Windows Job Object: IDE terminals run commands inside a job with
+    kill-on-close, so a browser spawned from a terminal command was
+    killed the instant that command exited - the launch reported
+    success, yet the very next command got ECONNREFUSED on port 9222
+    and no window ever appeared (2026-11-12). CREATE_BREAKAWAY_FROM_JOB
+    is the flag that lets the child escape the job and survive.
+    """
+    flags = 0
+    for name, default in (
+        ("DETACHED_PROCESS", 0x00000008),
+        ("CREATE_NEW_PROCESS_GROUP", 0x00000200),
+        ("CREATE_BREAKAWAY_FROM_JOB", _CREATE_BREAKAWAY_FROM_JOB),
+    ):
+        flags |= getattr(subprocess, name, default)
+    return flags
+
+
 def _cdp_get(port: int, path: str, timeout: float = 2.0):
     """GET a CDP HTTP endpoint and return parsed JSON (or raw text)."""
     url = f"http://127.0.0.1:{port}{path}"
@@ -425,23 +452,36 @@ def launch_browser(url: Optional[str] = None, port: int = CDP_DEFAULT_PORT) -> T
         target_url
     ]
 
+    breakaway_refused = False
     try:
         if sys.platform == "win32":
             # Launch the browser exe DIRECTLY (no powershell / cmd /c chain):
             # nested shell launches are a classic malware pattern and get
             # blocked by antivirus "malicious command line" heuristics.
-            flags = 0
-            if hasattr(subprocess, "DETACHED_PROCESS"):
-                flags |= subprocess.DETACHED_PROCESS
-            if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-                flags |= subprocess.CREATE_NEW_PROCESS_GROUP
-            subprocess.Popen(
-                cmd,
-                creationflags=flags,
-                close_fds=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            # CREATE_BREAKAWAY_FROM_JOB lets the browser escape the IDE
+            # terminal's Job Object so it survives the launching command;
+            # without it Windows kills the browser when the command exits
+            # (launch reports success, next command gets ECONNREFUSED).
+            try:
+                subprocess.Popen(
+                    cmd,
+                    creationflags=_windows_spawn_flags(),
+                    close_fds=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except OSError:
+                # The job forbids breakaway: fall back to a plain detached
+                # spawn. The browser may then die with its parent process;
+                # the success message says so honestly.
+                breakaway_refused = True
+                subprocess.Popen(
+                    cmd,
+                    creationflags=_windows_spawn_flags() & ~_CREATE_BREAKAWAY_FROM_JOB,
+                    close_fds=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
         else:
             subprocess.Popen(
                 cmd,
@@ -461,7 +501,12 @@ def launch_browser(url: Optional[str] = None, port: int = CDP_DEFAULT_PORT) -> T
                 open_url_in_running_browser(target_url, port)
             raised = bring_browser_to_front(port)
             front_note = "window brought to front" if raised else "window may be behind other windows"
-            return True, f"Successfully launched {os.path.basename(browser_bin)} on port {port} and opened {target_url} ({front_note})!"
+            msg = f"Successfully launched {os.path.basename(browser_bin)} on port {port} and opened {target_url} ({front_note})!"
+            if breakaway_refused:
+                msg += (" Note: the OS refused job-breakaway for this launch, so this browser may close when the"
+                        " launching command exits - if the next step cannot connect, double-click"
+                        " launch_browser_windows.bat once and continue.")
+            return True, msg
 
     return False, f"Browser launched, but port {port} did not respond within 20 seconds."
 

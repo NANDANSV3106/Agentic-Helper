@@ -20,6 +20,36 @@ from playwright.async_api import async_playwright, Page, Browser
 logger = logging.getLogger("quiz_pilot.programming_solver")
 
 
+# External-assignment markers (2026-11-13): Coursera "external"
+# assignments are not browser uploads - the work happens in a local
+# Linux environment (C++ compiled and submitted via a CLI, or a
+# Mininet topology run locally). The markers are deliberately narrow:
+# a plain upload page whose instructions merely mention compiling
+# locally must NOT classify as external, so CLI markers only count
+# when the page has no file-upload input.
+_MININET_MARKERS = ("mininet", "openflow", "open vswitch", "ovs-vsctl",
+                    "pox controller", "ryu controller", "topology")
+_CLI_STRONG_MARKERS = ("submission token", "command line", "command-line",
+                       "g++", "makefile", "cli submission")
+
+
+def classify_assignment_kind(title, instructions, url, has_file_input):
+    """Classify a programming spec as 'mininet', 'cpp_cli' or 'upload'.
+
+    Returns (kind, matched_markers). Pure function of the spec text so
+    it is unit-testable without a browser. 'upload' is the default:
+    the existing browser file-upload flow.
+    """
+    text = f"{title or ''}\n{instructions or ''}\n{url or ''}".lower()
+    matched = [m for m in _MININET_MARKERS if m in text]
+    if matched:
+        return "mininet", matched
+    matched = [m for m in _CLI_STRONG_MARKERS if m in text]
+    if matched and not has_file_input:
+        return "cpp_cli", matched
+    return "upload", []
+
+
 class ProgrammingAssignmentManager:
     """
     Automates LMS programming assignment workflows across Coursera, Canvas, and edX.
@@ -80,7 +110,8 @@ class ProgrammingAssignmentManager:
         text_match = any(kw in t_lower for kw in [
             "programming assignment", "autograder", "starter code",
             "upload your file", "submit your assignment", "grader output",
-            "submit code", "test cases"
+            "submit code", "test cases", "submission token", "mininet",
+            "external tool"
         ])
         return url_match or text_match
 
@@ -219,6 +250,14 @@ class ProgrammingAssignmentManager:
                     instructions_snippet: instructionText.substring(0, 2000)
                 };
             }''')
+
+            kind, kind_markers = classify_assignment_kind(
+                spec.get("title", ""), spec.get("instructions_snippet", ""),
+                url, spec.get("has_file_input", False)
+            )
+            spec["kind"] = kind
+            spec["kind_markers"] = kind_markers
+            spec["wsl_required"] = kind in ("mininet", "cpp_cli")
 
             spec["url"] = url
             return spec

@@ -341,6 +341,54 @@ class CourseOrchestrator:
                 item_res["status"] = "submitted"
                 item_res["questions_solved"] = len(questions)
 
+        elif item_type == "programming":
+            # Programming assignments were silently returned as "pending"
+            # (no branch existed) - the course reported done with them
+            # untouched. The server cannot write the solution code (that
+            # is the host agent's job), so hand it over VISIBLE: extract
+            # the spec and return a needs-agent status with the exact
+            # workflow, never a silent pending.
+            try:
+                pm = ProgrammingAssignmentManager(cdp_url=self.cdp_url)
+                spec = await pm.extract_task_spec(page=page)
+            except Exception as e:
+                spec = {"error": f"spec extraction failed: {e}"}
+            item_res["status"] = "programming_needs_agent"
+            item_res["spec"] = spec
+            kind = spec.get("kind", "upload") if isinstance(spec, dict) else "upload"
+            item_res["kind"] = kind
+            if kind == "cpp_cli":
+                # EXTERNAL C++ CLI assignment: no browser upload exists.
+                # The work (compile, test, submit) happens outside the browser
+                # (WSL when present, else the native Windows toolchain).
+                item_res["next_steps"] = [
+                    "inspect_programming_task: read the spec - this is an EXTERNAL C++ CLI assignment, not a browser upload; never use submit_code_file for it",
+                    "download the starter code and read its README/build instructions",
+                    "write the solution code yourself (the agent's job)",
+                    "exec_command: compile and run the starter tests (WSL Ubuntu when present, else the native Windows toolchain - it fetches the portable MinGW toolchain itself if no compiler is found); fix compile/test failures from the output",
+                    "exec_command: run the submission command exactly as the spec instructs (submission token / CLI); verify the reported result",
+                    "on failure, fix the code from the output and resubmit - repeat until it passes or 10 attempts",
+                ]
+            elif kind == "mininet":
+                # EXTERNAL Mininet assignment: topologies run locally under
+                # WSL (or a Linux VM); Open vSwitch must be started first.
+                item_res["next_steps"] = [
+                    "inspect_programming_task: read the spec - this is an EXTERNAL Mininet assignment, not a browser upload; never use submit_code_file for it",
+                    "write the topology/controller files yourself (the agent's job)",
+                    "exec_command with backend=wsl, as_root=true: start Open vSwitch (service openvswitch-switch start) - needed before any mn command; Mininet needs WSL or a Linux VM",
+                    "exec_command with backend=wsl: run the topology with mn --custom ... --test ... as the spec instructs; fix failures from the output",
+                    "follow the spec's submission instructions (output/token) via exec_command; verify the reported result",
+                    "on failure, fix and rerun - repeat until it passes or 10 attempts",
+                ]
+            else:
+                item_res["next_steps"] = [
+                    "inspect_programming_task: read the spec and starter code",
+                    "write the solution code yourself (the agent's job)",
+                    "submit_code_file: upload and submit the solution",
+                    "poll_autograder_results: read score and error log",
+                    "on grader failure, fix the code from the error log and resubmit - repeat until the grader passes or 10 attempts",
+                ]
+
         elif item_type == "peer_review":
             prm = PeerReviewManager(page=page)
             rev_res = prm.complete_peer_reviews(count=4)
@@ -362,6 +410,99 @@ class CourseOrchestrator:
                 item_res["status"] = "reviews_completed"
 
         return item_res
+
+    async def _solve_items_with_pool(
+        self,
+        context,
+        page,
+        items,
+        direct_api=None,
+    ):
+        """Solve a flat ordered list of items with ONE shared worker pool.
+
+        Four-tab-max policy (user default): at most max_concurrency
+        worker tabs, queue-fed in list order, so a short list runs all
+        together and a long list keeps every tab busy until the queue
+        drains. Failed quizzes are re-attempted until they pass (the
+        same rounds as before); passed quizzes are never retaken.
+        """
+        results = []
+        # 2. Multi-Tab Parallel Execution across pending assignments / modules
+        num_workers = min(self.max_concurrency, len(items))
+        if num_workers <= 1:
+            for item in items:
+                res = await self._solve_item_on_page(page, item, direct_api=direct_api)
+                results.append(res)
+        else:
+            worker_pages = [page]
+            for _ in range(num_workers - 1):
+                p_new = await context.new_page()
+                worker_pages.append(p_new)
+
+            queue = asyncio.Queue()
+            for it in items:
+                await queue.put(it)
+
+            async def worker_loop(w_page, w_id):
+                w_res = []
+                while True:
+                    try:
+                        it = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                    res = await self._solve_item_on_page(w_page, it, direct_api=direct_api)
+                    w_res.append(res)
+                    queue.task_done()
+                return w_res
+
+            tasks = [worker_loop(w_page, idx) for idx, w_page in enumerate(worker_pages)]
+            worker_outputs = await asyncio.gather(*tasks, return_exceptions=False)
+            for out in worker_outputs:
+                results.extend(out)
+
+            # Close helper tabs (leave the main page open)
+            for w_page in worker_pages[1:]:
+                try:
+                    await w_page.close()
+                except Exception:
+                    pass
+
+        # NOTE: no purge_all() here - other runs may share the same cache
+        # directory. Cleanup is explicit (CLI clean) or per-quiz.
+
+        # FAIL-RETRY-UNTIL-PASS (user policy): a FAILED quiz blocks the
+        # certificate, so failed quizzes are re-attempted - each round
+        # with the latest feedback in memory (correct answers locked,
+        # wrong options eliminated, failed questions re-solved) - UNTIL
+        # THEY PASS. Passed quizzes are final, never retaken to improve
+        # a score. The 9 rounds are only an infinite-loop guard; a quiz
+        # whose answers run out (gate) or that errors drops out of the
+        # loop and is reported with its real attempt count.
+        for _round in range(9):
+            _failed = [
+                r for r in results
+                if r.get("status") in ("submitted", "submitted_direct_api")
+                and r.get("passed") is False
+            ]
+            if not _failed:
+                break
+            _by_title = {r.get("title"): r for r in results}
+            _progress = False
+            for _fr in _failed:
+                _item = next((it for it in items if it.get("title") == _fr.get("title") and it.get("url") == _fr.get("url")), None)
+                if _item is None:
+                    continue
+                try:
+                    _retry_res = await self._solve_item_on_page(page, _item, direct_api=direct_api)
+                except Exception:
+                    continue
+                _retry_res["retry_after_fail"] = True
+                _by_title[_fr.get("title")] = _retry_res
+                _progress = True
+            results = list(_by_title.values())
+            if not _progress:
+                break
+        return results
 
     async def auto_complete_course(
         self,
@@ -401,83 +542,7 @@ class CourseOrchestrator:
                 except Exception:
                     direct_api = None
 
-            # 2. Multi-Tab Parallel Execution across pending assignments / modules
-            num_workers = min(self.max_concurrency, len(pending_items))
-            if num_workers <= 1:
-                for item in pending_items:
-                    res = await self._solve_item_on_page(page, item, direct_api=direct_api)
-                    results.append(res)
-            else:
-                worker_pages = [page]
-                for _ in range(num_workers - 1):
-                    p_new = await context.new_page()
-                    worker_pages.append(p_new)
-
-                queue = asyncio.Queue()
-                for it in pending_items:
-                    await queue.put(it)
-
-                async def worker_loop(w_page, w_id):
-                    w_res = []
-                    while True:
-                        try:
-                            it = queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            break
-                        res = await self._solve_item_on_page(w_page, it, direct_api=direct_api)
-                        w_res.append(res)
-                        queue.task_done()
-                    return w_res
-
-                tasks = [worker_loop(w_page, idx) for idx, w_page in enumerate(worker_pages)]
-                worker_outputs = await asyncio.gather(*tasks, return_exceptions=False)
-                for out in worker_outputs:
-                    results.extend(out)
-
-                # Close helper tabs (leave the main page open)
-                for w_page in worker_pages[1:]:
-                    try:
-                        await w_page.close()
-                    except Exception:
-                        pass
-
-            # NOTE: no purge_all() here. In a specialization run this method
-            # executes per course IN PARALLEL - purging the shared cache when
-            # one course finishes would wipe the memory of courses still
-            # running. Cleanup is explicit (CLI clean) or per-quiz.
-
-            # FAIL-RETRY-UNTIL-PASS (user policy): a FAILED quiz blocks the
-            # certificate, so failed quizzes are re-attempted - each round
-            # with the latest feedback in memory (correct answers locked,
-            # wrong options eliminated, failed questions re-solved) - UNTIL
-            # THEY PASS. Passed quizzes are final, never retaken to improve
-            # a score. The 9 rounds are only an infinite-loop guard; a quiz
-            # whose answers run out (gate) or that errors drops out of the
-            # loop and is reported with its real attempt count.
-            for _round in range(9):
-                _failed = [
-                    r for r in results
-                    if r.get("status") in ("submitted", "submitted_direct_api")
-                    and r.get("passed") is False
-                ]
-                if not _failed:
-                    break
-                _by_title = {r.get("title"): r for r in results}
-                _progress = False
-                for _fr in _failed:
-                    _item = next((it for it in pending_items if it.get("title") == _fr.get("title")), None)
-                    if _item is None:
-                        continue
-                    try:
-                        _retry_res = await self._solve_item_on_page(page, _item, direct_api=direct_api)
-                    except Exception:
-                        continue
-                    _retry_res["retry_after_fail"] = True
-                    _by_title[_fr.get("title")] = _retry_res
-                    _progress = True
-                results = list(_by_title.values())
-                if not _progress:
-                    break
+            results = await self._solve_items_with_pool(context, page, pending_items, direct_api)
 
             return {
                 "status": "completed",
@@ -493,8 +558,14 @@ class CourseOrchestrator:
         prefer_direct_api: bool = True
     ) -> Dict[str, Any]:
         """
-        Discovers all courses in a Specialization, slices the requested count (e.g. first 4),
-        opens their assignments across tabs, and completes them concurrently.
+        Completes a Specialization with ONE shared worker pool (four-tab
+        max, the user default): pending items from every targeted course
+        are queued course-by-course, and at most max_concurrency tabs
+        work the queue, so a course with fewer than max_concurrency
+        pending items backfills its free tabs from the next course
+        instead of leaving tabs idle. Courses verify complete one by
+        one; passes repeat until every course verifies or a pass makes
+        no progress.
         """
         ensure_browser_visible_once()
         async with async_playwright() as p:
@@ -509,50 +580,80 @@ class CourseOrchestrator:
 
             target_courses = all_courses[:max_courses] if max_courses else all_courses
 
-            course_semaphore = asyncio.Semaphore(min(self.max_concurrency, len(target_courses)))
-
-            async def run_single_course(c_info):
-                async with course_semaphore:
-                    res = await self.auto_complete_course(
-                        course_url=c_info["url"],
-                        prefer_direct_api=prefer_direct_api
-                    )
-                    return {
-                        "course_title": c_info.get("title"),
-                        "course_url": c_info.get("url"),
-                        "result": res
-                    }
+            direct_api = None
+            if prefer_direct_api:
+                try:
+                    direct_api = await CourseraDirectAPI.from_page(page)
+                except Exception:
+                    direct_api = None
 
             # VERIFY each course from its own assignments page: a course only
             # counts as complete when its execution plan (incomplete items) is
-            # empty. "Attempted" is not "completed" - the old code reported
-            # len(results) as courses_completed, which hid unfinished courses.
+            # empty. "Attempted" is not "completed".
             verify_crawler = SyllabusCrawler(page=page)
 
             async def verify_course(c_info):
                 plan = await verify_crawler.crawl_course_assignments(c_info["url"])
                 return len(plan.get("execution_plan", [])) == 0
 
-            # NOTE: no purge_all() here either - other specializations/courses
-            # may be running concurrently (multi-worker batches) and share the
-            # same cache directory. Cleanup is explicit or per-quiz only.
+            # NOTE: no purge_all() here - other runs may share the same cache
+            # directory. Cleanup is explicit or per-quiz only.
             #
-            # LOOP until every targeted course VERIFIES complete (or a full
-            # pass makes no progress): courses can unlock/appear after earlier
-            # ones finish, and one pass is never treated as proof of done.
-            loop = await _loop_until_complete(
-                target_courses, run_single_course, verify_course, max_passes=3
-            )
+            # ONE global queue per pass, course-major order: every remaining
+            # course's pending items are gathered in course order, then a
+            # single pool of at most max_concurrency tabs works the queue.
+            # Titles are qualified with the course slug ('Title [slug]', the
+            # same convention the MCP server uses for quiz memory) so two
+            # courses with an identically named quiz never share outcome or
+            # memory state.
+            remaining = list(target_courses)
+            all_details = []
+            passes = 0
+            prev_remaining = None
+            while remaining and passes < 3:
+                passes += 1
+                queued = []
+                for c_info in remaining:
+                    plan = await crawler.crawl_course_assignments(c_info["url"])
+                    slug = plan.get("course_slug") or ""
+                    for it in plan.get("execution_plan", []):
+                        title = it.get("title", "")
+                        if slug and not title.endswith(f"[{slug}]"):
+                            it["title"] = f"{title} [{slug}]"
+                        it["_course_url"] = c_info["url"]
+                        it["_course_title"] = c_info.get("title")
+                        queued.append(it)
+                if queued:
+                    results = await self._solve_items_with_pool(context, page, queued, direct_api)
+                    all_details.append({
+                        "pass": passes,
+                        "courses_attempted": [c.get("title") for c in remaining],
+                        "items": results,
+                    })
+                still = []
+                for c_info in remaining:
+                    try:
+                        done = await verify_course(c_info)
+                    except Exception:
+                        done = False
+                    if not done:
+                        still.append(c_info)
+                if prev_remaining is not None and len(still) >= prev_remaining:
+                    remaining = still
+                    break  # a full pass made no progress - report honestly, do not spin
+                prev_remaining = len(still)
+                remaining = still
 
+            completed = [c for c in target_courses if c not in remaining]
             return {
                 "specialization": spec_url,
-                "status": "completed" if not loop["remaining_items"] else "incomplete",
+                "status": "completed" if not remaining else "incomplete",
                 "total_courses_in_spec": len(all_courses),
-                "courses_completed": len(loop["completed_items"]),
+                "courses_completed": len(completed),
                 "remaining_courses": [
                     {"title": c.get("title"), "url": c.get("url")}
-                    for c in loop["remaining_items"]
+                    for c in remaining
                 ],
-                "passes": loop["passes"],
-                "details": loop["results"]
+                "passes": passes,
+                "details": all_details
             }

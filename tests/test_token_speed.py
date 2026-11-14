@@ -65,7 +65,7 @@ async def test_record_quiz_analysis_returns_short_receipt(tmp_path, monkeypatch)
 
 def test_tool_schema_has_no_duplicate_aliases():
     names = [t["name"] for t in mcp_server.TOOLS]
-    assert len(names) == len(set(names)) == 23
+    assert len(names) == len(set(names)) == 24
     # Aliases removed from the schema; their handlers still exist.
     assert "inspect_all_tabs" not in names
     assert "solve_parallel_quizzes" not in names

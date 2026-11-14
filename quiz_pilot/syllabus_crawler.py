@@ -35,13 +35,16 @@ class SyllabusCrawler:
         current_url = getattr(self.page, "url", "")
 
         if target_url not in current_url:
-            await self.page.evaluate("(u) => window.location.href = u", target_url)
+            try:
+                await self.page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
+            except Exception:
+                await self.page.evaluate("(u) => window.location.href = u", target_url)
 
-        # Wait reactively for assignments table to render without blind sleeps
+        # Wait reactively for assignments table or links to render
         try:
-            await self.page.wait_for_selector("[class*='css-1qd65r'], div[role='row'], table, div[role='table'], [data-testid='grade-item']", timeout=6000)
+            await self.page.wait_for_selector("a[href*='/assignment-submission/'], a[href*='/exam/'], a[href*='/quiz/'], [class*='css-1qd65r'], div[role='row'], table, div[role='table'], [data-testid='grade-item']", timeout=15000)
         except Exception:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(2.0)
 
         items = await self.page.evaluate('''() => {
             const results = [];
@@ -59,7 +62,11 @@ class SyllabusCrawler:
                 const href = linkEl ? linkEl.href : '';
                 
                 let itemType = 'quiz';
-                if (/programming/i.test(text) || /programming/i.test(href)) {
+                if (/programming/i.test(href)) {
+                    itemType = 'programming';
+                } else if (/assignment-submission/i.test(href)) {
+                    itemType = 'quiz';
+                } else if (/programming/i.test(text)) {
                     itemType = 'programming';
                 } else if (/peer/i.test(text) || /peer/i.test(href) || /feedback/i.test(href)) {
                     itemType = 'peer';
@@ -68,7 +75,7 @@ class SyllabusCrawler:
                 }
                 
                 let status = 'not_attempted';
-                if (/passed/i.test(text) || /success/i.test(text) || /100%/i.test(text)) {
+                if (/\bpassed\b/i.test(text) || /\bsuccess\b/i.test(text)) {
                     status = 'passed';
                 } else if (/submitted/i.test(text)) {
                     status = 'submitted';
@@ -130,7 +137,10 @@ class SyllabusCrawler:
 
         current_url = getattr(self.page, "url", "")
         if target_url not in current_url:
-            await self.page.evaluate("(u) => window.location.href = u", target_url)
+            try:
+                await self.page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
+            except Exception:
+                await self.page.evaluate("(u) => window.location.href = u", target_url)
 
         try:
             await self.page.wait_for_selector("a[href*=\"/learn/\"], h3", timeout=6000)
