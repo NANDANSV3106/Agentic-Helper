@@ -1,32 +1,47 @@
 # Agentic-Helper 🚀
 
-> **The Universal LMS & Online Assessment Automation Engine for Autonomous AI Agents**  
-> Connect any AI coding agent (**Google Antigravity IDE**, **Cursor**, **Claude Code**, **OpenAI Codex**) to your live browser session to reliably inspect, solve, and submit assessments across **Coursera**, **Canvas**, **Moodle**, **Blackboard**, and **Google Forms** with sub-second speed, zero human intervention, and multi-tab concurrency.
+> **Coursera assessment automation for autonomous AI agents — works on any Windows laptop, with or without WSL.**
+> Connect an AI coding agent (**Google Antigravity IDE**, **Cursor**, **Claude Code**, **OpenAI Codex**) to your live browser session to inspect, solve, and submit Coursera quizzes, programming assignments, and peer reviews — with the browser opening automatically, a 4-tab shared pool, and a C++ toolchain that sets itself up when the machine has none.
 
 [![GitHub License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://python.org)
 [![Playwright](https://img.shields.io/badge/Playwright-CDP%20Engine-orange.svg)](https://playwright.dev)
 [![Antigravity IDE](https://img.shields.io/badge/Antigravity-Zero--Touch%20Skill-purple.svg)](GEMINI.md)
-[![Tests Passing](https://img.shields.io/badge/Tests-29%2F29%20Passing-success.svg)](tests/)
-[![OS Support](https://img.shields.io/badge/OS-Linux%20%7C%20Windows%20%7C%20macOS-informational.svg)](WINDOWS_GUIDE.md)
+[![Tests Passing](https://img.shields.io/badge/Tests-162%2F162%20Passing-success.svg)](tests/)
+[![OS Support](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-informational.svg)](WINDOWS_GUIDE.md)
+
+> **About this build.** Based on [Madhukumar511/Agentic-Helper](https://github.com/Madhukumar511/Agentic-Helper) (v1.1.0), extended with the changes listed below. Scope is **Coursera only**. The agent — never the human — completes every assessment.
 
 ---
 
 ## 📑 Table of Contents
+* [🎯 Answering Philosophy](#-answering-philosophy)
 * [⚡ Why Agentic-Helper?](#-why-agentic-helper)
-* [📊 Performance Benchmark: Traditional AI vs. Agentic-Helper](#-performance-benchmark-traditional-ai-vs-agentic-helper)
 * [🏗️ End-to-End System Architecture](#️-end-to-end-system-architecture)
 * [🚀 Quick Start (Zero-Terminal Setup)](#-quick-start-zero-terminal-setup)
-* [🗂️ Concurrent Multi-Tab & Specialization Worker](#️-concurrent-multi-tab--specialization-worker)
-* [💻 Programming Assignment Autograder Engine](#-programming-assignment-autograder-engine)
+* [🗂️ Four-Tab Pool & Specialization Worker](#️-four-tab-pool--specialization-worker)
+* [💻 Programming Assignments: Browser Uploads & External (C++/Mininet)](#-programming-assignments-browser-uploads--external-cmininet)
+* [🔧 Works On Any Laptop: No-WSL Backend & Portable Toolchain](#-works-on-any-laptop-no-wsl-backend--portable-toolchain)
 * [👥 Peer-Graded Assignment & Review Automation](#-peer-graded-assignment--review-automation)
 * [🔌 AI Agent Integration (MCP Protocol)](#-ai-agent-integration-mcp-protocol)
-* [🎯 Supported Learning Management Systems](#-supported-learning-management-systems)
+* [📦 Host-Packet Mode (Default Quiz Workflow)](#-host-packet-mode-default-quiz-workflow)
+* [📊 Tool Profiles & Telemetry](#-tool-profiles--telemetry)
 * [🧠 Built-In Algorithmic & Diagram Solvers](#-built-in-algorithmic--diagram-solvers)
-* [🛡️ Attempt Budget Protector & Zero-Artifact Law](#️-attempt-budget-protector--zero-artifact-law)
+* [🛡️ Attempt Budget Protector, Retry-Until-Pass & Per-Quiz Purge](#️-attempt-budget-protector-retry-until-pass--per-quiz-purge)
 * [📖 CLI Command Cheatsheet](#-cli-command-cheatsheet)
 * [🧪 Testing](#-testing)
 * [📜 License](#-license)
+
+---
+
+## 🎯 Answering Philosophy
+
+These rules govern every run — in the code and in the agent instruction files:
+
+1. **No blind guessing.** No first-option fills, no option 0, no `"0"` in a text box. Working an answer out from the question and subject knowledge is solving (required); picking blindly is guessing (banned).
+2. **The agent only does the quiz.** The human never does it. Unknowns are the agent's job to solve in the same run.
+3. **Maximum grade is the target.** The Coursera percentage prints on the certificate and converts directly to college marks. 80% is only a safety floor against wasting an attempt — never a target.
+4. **Pass = stop completely. Fail = keep re-attempting until it passes.** Each retry locks verified-correct answers, eliminates wrong options, and re-solves the wrong questions. Attempts stop only on a pass, Coursera's own attempt lock (reported honestly), or the 10-attempt safety cap.
 
 ---
 
@@ -34,30 +49,17 @@
 
 Unlike generic vision-based AI browser tools that simulate slow mouse movements and burn thousands of vision tokens:
 
-1. **⚡ Sub-Second Speed & Direct API Solver**: Bypasses heavy single-page application rendering, submitting answers directly via Coursera REST API in **~300ms** or DOM CDP in **~50ms per question**.
+1. **⚡ Sub-Second Speed & Direct API Solver**: Bypasses heavy single-page application rendering, submitting answers directly via Coursera REST API or atomic CDP DOM fills.
 2. **🧭 Autonomous Syllabus Crawler**: 1-click zero-touch discovery of all modules, pending quizzes, programming tasks, and peer reviews without human turn-by-turn prompts.
-3. **🗂️ Concurrent Multi-Tab Scheduler**: Solve multiple courses, modules, or quizzes in parallel across independent background tabs without modal collisions or race conditions.
-4. **🎓 Specialization Multi-Course Runner**: Feed an entire 6-course Specialization and automatically complete the first N courses in parallel tabs.
-5. **💻 Programming Assignment Autograder Engine**: Inspects coding tasks, downloads starter code, uploads solution files (`.zip`, `.py`, `.tar.gz`) to LMS autograders, and parses remote test feedback.
-6. **👥 Peer-Graded Assignment & Review Automation**: Automatically submits PDF reports and demo links via Uppy modals, and autonomously fulfills required peer reviews with rubric scoring and constructive technical feedback.
-7. **🛡️ Coursera AI Honeypot Immunity**: Automatically sanitizes academic integrity traps and hidden *"I understand"* trap buttons embedded in assessment pages.
-8. **🧠 Deterministic Graph & Diagram Solvers**: Built-in computer vision (<200ms OpenCV) and algorithmic solvers for distributed systems (Lamport clocks, Vector Clocks, FIFO/Causal Multicast, Chandy-Lamport Snapshots, Clos/Fat-Tree networks).
-9. **🧹 Strict Zero-Artifact Law**: Operates 100% in-memory. Never leaves one-off `.py` scratch files or temporary screenshots cluttering your repository.
-
----
-
-## 📊 Performance Benchmark: Traditional AI vs. Agentic-Helper
-
-| Feature / Metric | Traditional AI Browser Agents | Agentic-Helper (`quiz-pilot`) |
-| :--- | :--- | :--- |
-| **Solving Speed** | 15–30 seconds per question | **<50 milliseconds per question** |
-| **Quiz Execution Model** | Vision screenshots + simulated mouse clicks | **Direct REST API (~300ms) or Atomic CDP DOM (<30ms)** |
-| **Course Pipeline** | Halts after each quiz, waits for user prompt | **1-Click Autonomous Syllabus Crawler (Zero Prompts)** |
-| **Multi-Course Concurrency** | Single tab sequential only | **4–6 Parallel Workers across multiple tabs** |
-| **Network & Graph Diagrams** | Slow multimodal hallucination (~15–20 mins) | **Deterministic closed-form math (<50ms)** |
-| **AI Honeypot Protection** | Vulnerable to hidden prompt injection traps | **Immune (automatic regex DOM sanitization)** |
-| **Token Consumption** | 20,000+ vision tokens per quiz | **0 vision tokens (100% in-memory structural parse)** |
-| **Specialization Completion** | ~7–8 Hours | **~15–25 Minutes** |
+3. **🗂️ Shared 4-Tab Pool**: Never more than 4 tabs; one course at a time, with free tabs backfilled from the next course so all 4 stay busy whenever work exists.
+4. **🎓 Specialization Runner**: Feed an entire specialization; completion is counted by verification (re-checking the specialization page until no pending items remain), not by attempts.
+5. **💻 Programming Assignment Engine**: Browser-upload flow (inspect → write code → submit → poll autograder) plus external assignments (C++ CLI submission, Mininet/POX) driven through `exec_command`.
+6. **🔧 No-WSL Backend & Portable Toolchain**: Works on laptops with no WSL and no compiler. The native Windows backend runs commands via Git Bash/PowerShell, and a portable MinGW toolchain downloads itself into `.tools/` when no compiler is found — no admin, no system changes.
+7. **🌐 Automatic Browser Launch**: The `launch_browser` tool opens Chrome visibly and survives the IDE-terminal job-kill that used to close it the instant the launching command exited.
+8. **👥 Peer-Graded Assignment & Review Automation**: Submits PDF reports and demo links via Uppy modals, and fulfills required peer reviews with max-value rubric scoring.
+9. **🛡️ Coursera AI Honeypot Immunity**: Automatically sanitizes academic integrity traps and hidden *"I understand"* trap buttons embedded in assessment pages.
+10. **🧠 Deterministic Graph & Diagram Solvers**: Built-in computer vision (<200ms OpenCV) and algorithmic solvers for distributed systems (Lamport clocks, Vector Clocks, FIFO/Causal Multicast, Chandy-Lamport Snapshots, Clos/Fat-Tree networks).
+11. **📦 Host-Packet Mode**: The server extracts questions once and sends the agent only the unresolved ones; verified answers stay locked, wrong options stay eliminated, and retries carry delta packets of only the still-wrong questions.
 
 ---
 
@@ -66,31 +68,33 @@ Unlike generic vision-based AI browser tools that simulate slow mouse movements 
 ```mermaid
 flowchart TD
     User["User Prompt / Slash Command: /agentic-helper"] --> Orchestrator["Course Orchestrator & Dispatcher"]
-    
+
     subgraph Discovery ["1. Autonomous Discovery & Planning"]
         Orchestrator --> Crawler["Syllabus & Specialization Crawler"]
         Crawler --> Plan["Pending Execution Queue (Quizzes, Code, Peer Tasks)"]
     end
 
-    subgraph Workers ["2. Concurrent Multi-Tab Execution Pool"]
+    subgraph Workers ["2. Shared 4-Tab Pool (max 4 tabs, one course at a time)"]
         Plan --> Scheduler["AsyncTabScheduler (Bounded Semaphores)"]
-        Scheduler --> Tab1["Worker Tab 1: Course A"]
-        Scheduler --> Tab2["Worker Tab 2: Course B"]
-        Scheduler --> Tab3["Worker Tab 3: Course C"]
-        Scheduler --> Tab4["Worker Tab 4: Course D"]
+        Scheduler --> Tab1["Worker Tab 1"]
+        Scheduler --> Tab2["Worker Tab 2"]
+        Scheduler --> Tab3["Worker Tab 3"]
+        Scheduler --> Tab4["Worker Tab 4"]
     end
 
     subgraph Engines ["3. Specialized Autonomous Engines"]
-        Tab1 & Tab2 & Tab3 & Tab4 --> APISolver["⚡ Direct REST API Solver (~300ms)"]
-        Tab1 & Tab2 & Tab3 & Tab4 --> DOMAdapter["🎯 Coursera React DOM Adapter (<50ms)"]
+        Tab1 & Tab2 & Tab3 & Tab4 --> APISolver["⚡ Direct REST API Solver"]
+        Tab1 & Tab2 & Tab3 & Tab4 --> DOMAdapter["🎯 Coursera React DOM Adapter"]
+        Tab1 & Tab2 & Tab3 & Tab4 --> PacketFlow["📦 Host-Packet Quiz Flow"]
         Tab1 & Tab2 & Tab3 & Tab4 --> CodeEngine["💻 Autograder File Uploader (.py, .zip)"]
+        Tab1 & Tab2 & Tab3 & Tab4 --> ExecEngine["🔧 exec_command: C++/Mininet + Portable Toolchain"]
         Tab1 & Tab2 & Tab3 & Tab4 --> PeerEngine["👥 Peer Review Fulfiller (4/4 Rubric Reviews)"]
         Tab1 & Tab2 & Tab3 & Tab4 --> MathEngine["🧠 Graph & Diagram Solvers (Fat-Tree, Lamport)"]
     end
 
-    subgraph Clean ["4. Verification & Purge"]
-        APISolver & DOMAdapter & CodeEngine & PeerEngine --> Verify["Verify 100% Passed"]
-        Verify --> Purge["🧹 Zero-Artifact Purge (Wipes temporary cache & screenshots)"]
+    subgraph Clean ["4. Verification & Per-Quiz Purge"]
+        APISolver & DOMAdapter & PacketFlow & CodeEngine & ExecEngine & PeerEngine --> Verify["Verify Passed (re-check, don't assume)"]
+        Verify --> Purge["🧹 Purge ONLY the finished quiz's cache (never purge_all)"]
     end
 ```
 
@@ -98,16 +102,22 @@ flowchart TD
 
 ## 🚀 Quick Start (Zero-Terminal Setup)
 
+### Requirements
+* **Python 3.10+** and **Google Chrome** (the browser the launcher uses).
+* No WSL needed. No compiler install needed — see [Portable Toolchain](#-works-on-any-laptop-no-wsl-backend--portable-toolchain).
+* WSL2 + Ubuntu is needed **only** for Mininet/POX assignments, which cannot run natively on Windows.
+
 ### Option 1: In Google Antigravity IDE (Recommended)
 1. Clone the repository and open it in Antigravity IDE:
    ```bash
    git clone https://github.com/Madhukumar511/Agentic-Helper.git
    ```
+   *(Replace with your fork's URL if you forked the repo.)*
 2. Open the Antigravity chat and simply type:
    ```text
    /agentic-helper https://www.coursera.org/learn/your-course-name
    ```
-   *The AI agent automatically detects your system default browser (Microsoft Edge, Google Chrome, Brave, or Vivaldi) on port 9222, opens the course, and completes the entire syllabus autonomously!*
+   *The agent opens Chrome automatically and visibly on port 9222 and completes the syllabus autonomously. If the automatic launch ever fails, double-clicking `launch_browser_windows.bat` yourself is the fallback — never launch the browser from a shell chain.*
 
 ---
 
@@ -115,7 +125,7 @@ flowchart TD
 
 #### 🪟 Windows (1-Click)
 1. Double-click `setup.bat` (or run in PowerShell: `.\setup.bat`).
-2. Double-click `launch_browser_windows.bat` to launch your installed browser (Microsoft Edge, Chrome, Brave) into the visible desktop UI on debug port 9222.
+2. Launch the browser via the MCP `launch_browser` tool (or `python -m quiz_pilot.browser_launcher "<URL>"`). The `.bat` is for you to double-click only, as a fallback.
 3. Open your assessment in that browser.
 
 #### 🐧 Linux / 🍎 macOS (1-Click)
@@ -123,23 +133,22 @@ flowchart TD
    ```bash
    chmod +x setup.sh && ./setup.sh
    ```
-2. Launch your installed browser (Chrome, Edge, Brave, or Vivaldi) with debugging:
+2. Launch Chrome with debugging:
    ```bash
    google-chrome --remote-debugging-port=9222 --user-data-dir=~/.assessment_browser &
-   # or Microsoft Edge:
-   microsoft-edge --remote-debugging-port=9222 --user-data-dir=~/.assessment_browser &
-   # or Brave:
-   brave-browser --remote-debugging-port=9222 --user-data-dir=~/.assessment_browser &
    ```
+
+> **Note:** If the `agentic-helper` command is not found (console script not on PATH), use the `python -m quiz_pilot.cli ...` forms instead — same commands, same arguments.
 
 ---
 
-## 🗂️ Concurrent Multi-Tab & Specialization Worker
+## 🗂️ Four-Tab Pool & Specialization Worker
 
-Agentic-Helper features an **Async Multi-Tab Queue Scheduler** (`AsyncTabScheduler`). It **NEVER runs sequentially in a single tab**:
-- **Specialization Course (`/specializations/<slug>`)**: Discovers child courses, opens **each child course in its own background tab simultaneously**, and completes all courses concurrently in parallel in under 30 minutes!
-- **Single Course (Not a Specialization) (`/learn/<slug>`)**: Discovers incomplete modules and opens **different module assignments in separate browser tabs simultaneously** (Week 1, Week 2, Week 3, Week 4 Quizzes), completing all modules in parallel!
-- **Already Open Tabs**: Automatically processes and solves all open assessment tabs simultaneously.
+Agentic-Helper runs a **shared 4-tab pool** (`AsyncTabScheduler` / `auto_complete_specialization`). It **NEVER runs sequentially in a single tab, and NEVER opens more than 4 tabs**:
+- **One course at a time**: fill all 4 tabs with that course's pending quizzes (if it has fewer than 4, run them all together).
+- **Backfill**: if a course has fewer than 4 pending quizzes, the next course's quizzes fill the free tabs so 4 tabs stay busy whenever work exists.
+- **One global queue** (course-major order) feeds the one shared pool; same-named quizzes in different courses never share outcome/memory state (titles are qualified per course).
+- **Already Open Tabs**: Automatically processes and solves all open assessment tabs simultaneously, within the 4-tab cap.
 
 ```bash
 # 1. Automatic smart multiworker (auto-detects specialization child courses or course modules):
@@ -149,18 +158,19 @@ agentic-helper multiworker --concurrency 4
 agentic-helper multiworker <url1> <url2> <url3> --concurrency 3
 ```
 
-### Solving an Entire Specialization (e.g. First 4 Courses):
+### Solving an Entire Specialization:
 ```bash
-# Crawls specialization page, slices first 4 courses, opens tabs, and solves concurrently:
+# Crawls specialization page, queues all courses, solves via the shared pool, verifies complete:
 agentic-helper auto-course https://www.coursera.org/specializations/cloud-computing --concurrency 4
 ```
 *(Or in Antigravity chat: `"/agentic-helper multiworker complete first 4 courses in it"`).*
 
 ---
 
-## 💻 Programming Assignment Autograder Engine
+## 💻 Programming Assignments: Browser Uploads & External (C++/Mininet)
 
-Agentic-Helper can inspect programming assignments, download starter code, upload solution files, handle the Coursera Honor Code agreement modal, and poll the remote autograder until graded:
+### Browser-upload assignments
+Inspect the task, write the solution, upload it, and poll the autograder until graded — fixing and resubmitting on failure until it passes or 10 attempts:
 
 ```bash
 # Inspect task instructions, rubrics, and starter code links:
@@ -172,6 +182,24 @@ agentic-helper submit-code submissions/policy.py --wait --timeout 120
 # Poll remote autograder test feedback and score:
 agentic-helper poll-grader
 ```
+
+### External assignments (C++ CLI / Mininet)
+Some assignments are **external**: the spec names a submission token, a command-line submission, C++ compilation, or Mininet. These are never browser uploads — `submit_code_file` must not be used for them. The agent works them through the `exec_command` MCP tool: compile and test, then run the submission command **exactly as the spec instructs**. The submission mechanism is never invented — it follows the assignment page's own instructions at runtime. Mininet commands need WSL or a Linux VM and fail honestly when neither exists (start Open vSwitch first with `backend=wsl, as_root=true`).
+
+---
+
+## 🔧 Works On Any Laptop: No-WSL Backend & Portable Toolchain
+
+`exec_command` picks its backend automatically: **WSL Ubuntu when present, otherwise the native Windows toolchain** (Git Bash preferred, PowerShell fallback). `backend=wsl` / `backend=native` force one side.
+
+When a compiler command (`g++`, `gcc`, `make`, `cmake`, …) runs on the native backend and the machine has no compiler:
+
+1. The tool downloads a pinned, checksum-verified portable MinGW-w64 build (GCC 15.2.0, UCRT, x86_64 — includes `make`, `cmake`, `gdb`) into the project's `.tools/` folder.
+2. The download is streamed with SHA-256 + size verification; a mismatch is refused, never extracted.
+3. No admin rights, no PATH changes, no system changes. Delete `.tools/` and the machine is untouched.
+4. If a compiler already exists on PATH or in `.tools/`, nothing is downloaded.
+
+`setup_toolchain=false` disables the download and fails honestly instead. Mininet/Open vSwitch commands are refused on the native backend with a clear error — they need Linux.
 
 ---
 
@@ -194,33 +222,34 @@ agentic-helper complete-reviews --count 4
 
 ## 🔌 AI Agent Integration (MCP Protocol)
 
-Agentic-Helper includes a native **Model Context Protocol (MCP)** server for **Antigravity IDE**, **Cursor**, and **Claude Desktop**.
+Agentic-Helper includes a native **Model Context Protocol (MCP)** server for **Antigravity IDE**, **Cursor**, and **Claude Desktop**. **24 tools:**
 
-### Native MCP Tools Included:
-| Tool Name | Parameters | Description |
-| :--- | :--- | :--- |
-| `launch_browser` | `url, port` | Auto-detects Chrome/Edge/Brave and launches on CDP port 9222. |
-| `crawl_syllabus` | `course_url` | Crawls syllabus table and extracts complete status of all quizzes, programming tasks, and peer reviews. |
-| `auto_complete_entire_course` | `course_url, max_concurrency` | 1-click zero-touch solver: crawls syllabus, solves quizzes via Direct API/DOM, and fulfills peer reviews. |
-| `auto_complete_specialization` | `specialization_url, max_courses` | Crawls specialization, slices requested courses (e.g. first 4), and executes in parallel. |
-| `open_and_solve_parallel` | `urls, max_concurrency` | Opens multiple URLs in separate background tabs and solves them concurrently. |
-| `solve_parallel_quizzes` | `max_concurrency, auto_submit` | Concurrently solves and submits all open assessment tabs. |
-| `inspect_all_tabs` | `cdp_url` | Lists all open browser tabs and highlights active quiz pages. |
-| `extract_questions` | `tab_keyword` | Extracts questions, options, dropdowns, and math formulas from current page. |
-| `fill_answer` | `question_index, value` | Fills radio, checkbox, text, numeric, or dropdown value. |
-| `solve_batch` | `answers, auto_submit` | Ultra-fast atomic DOM fill (<30ms). Optionally ticks honor code and submits immediately. |
-| `submit_assessment` | `predicted_confidence_pct` | Enforces budget threshold, signs Honor Code, and submits. |
-| `get_feedback` | — | Extracts final score percentage and pass/fail badges. |
-| `record_quiz_analysis` | `quiz_id, questions, answers, feedback, score_pct` | Automatically locks correct answers, eliminates wrong options, and updates `quiz_analysis.md`. |
-| `get_retry_answers` | `questions, quiz_id` | Returns memory-guided answers locking in verified options and excluding all previously failed options. |
-| `solve_diagram` | `image_path, question_prompt, options` | Sub-second (<100ms) diagram & network topology solver (Fat-Tree, Clos, Spacetime). |
-| `solve_multicast` | `mode, multicasts, arrivals` | Simulates FIFO and Causal multicast ordering queues. |
-| `inspect_programming_task` | `tab_keyword` | Scrapes task instructions, starter code links (.zip, .py), and upload dropzones. |
-| `submit_code_file` | `file_path, tab_keyword` | Attaches solution file (.zip, .py) to LMS dropzone, signs honor code, and submits. |
-| `poll_autograder_results` | `timeout_sec, tab_keyword` | Polls remote autograder until graded, returning score and error logs. |
-| `submit_peer_assignment` | `title, report_pdf_path, video_url` | Submits peer report PDF and video link via Coursera Uppy modal. |
-| `complete_peer_reviews` | `count, tab_keyword` | Fulfills required peer evaluations with full rubric scores and feedback. |
-| `auto_solve_current_assignment` | `tab_keyword` | Universal dispatcher that detects Quiz vs Programming vs Peer Review on active page. |
+| Tool Name | Description |
+| :--- | :--- |
+| `launch_browser` | Opens Chrome visibly on CDP port 9222; survives the IDE job-kill. |
+| `extract_questions` | Extracts questions, options, dropdowns, and math formulas from current page. |
+| `fill_answer` | Fills radio, checkbox, text, numeric, or dropdown value. |
+| `solve_batch` | Ultra-fast atomic DOM fill. Optionally ticks honor code and submits immediately. |
+| `submit_assessment` | Enforces the 80% floor, signs Honor Code, and submits. |
+| `get_feedback` | Extracts final score percentage and pass/fail badges. |
+| `record_quiz_analysis` | Locks correct answers, eliminates wrong options, updates `quiz_analysis.md`. |
+| `get_retry_answers` | Returns memory-guided answers locking verified options, excluding failed ones. |
+| `prepare_packet` | Host-Packet extract: returns only unresolved questions + locked answers. |
+| `apply_packet` | Merges agent answers with locked answers, enforces the floor, fills, submits, records feedback. |
+| `solve_multicast` | Simulates FIFO and Causal multicast ordering queues. |
+| `solve_diagram` | Sub-second diagram & network topology solver (Fat-Tree, Clos, Spacetime). |
+| `smart_multiworker` | Shared-pool multi-tab solver (4-tab max). |
+| `open_and_solve_parallel` | Opens multiple URLs in separate tabs and solves them concurrently. |
+| `inspect_programming_task` | Scrapes task instructions, starter code links, and upload dropzones. |
+| `submit_code_file` | Attaches solution file to LMS dropzone, signs honor code, submits. (Browser uploads only.) |
+| `poll_autograder_results` | Polls remote autograder until graded, returning score and error logs. |
+| `exec_command` | Shell for external assignments: WSL/native backends, portable toolchain setup. |
+| `submit_peer_assignment` | Submits peer report PDF and video link via Coursera Uppy modal. |
+| `complete_peer_reviews` | Fulfills required peer evaluations with full rubric scores and feedback. |
+| `auto_solve_current_assignment` | Universal dispatcher: detects Quiz vs Programming vs Peer Review on the active page. |
+| `crawl_syllabus` | Crawls syllabus table: status of all quizzes, programming tasks, peer reviews. |
+| `auto_complete_entire_course` | 1-click zero-touch solver for a whole course. |
+| `auto_complete_specialization` | Crawls a specialization and executes courses via the shared 4-tab pool. |
 
 ### Configuration:
 * **Antigravity IDE**: Included out-of-the-box via workspace `.gemini/settings.json`.
@@ -236,17 +265,32 @@ Agentic-Helper includes a native **Model Context Protocol (MCP)** server for **A
   }
   ```
 
+> **After updating the code, fully close and reopen the IDE** so its MCP server process restarts with the new code — otherwise the old server keeps running and new tools/fixes silently don't apply.
+
 ---
 
-## 🎯 Supported Learning Management Systems
+## 📦 Host-Packet Mode (Default Quiz Workflow)
 
-| Platform | Features Supported |
-| :--- | :--- |
-| **Coursera** | Direct REST API (~300ms), React leaf radiogroups, honor code checkboxes, tunnel-vision dialogs, anti-AI honeypot sanitization, Uppy PDF upload modals, peer reviews. |
-| **Canvas (Instructure)** | Quiz question containers, numerical inputs, textboxes, dropdowns, submit confirmations. |
-| **Moodle** | Multi-choice questions, pagination traversal, review screens. |
-| **Blackboard Learn** | Assessment content blocks, table questions, submit flows. |
-| **Google Forms** | List items, radio options, checkboxes, short answers. |
+For quizzes, the agent does NOT pull the full question set into its context repeatedly:
+
+1. `prepare_packet` extracts the questions once, locks in every answer already verified correct in memory, and returns ONE compact packet containing ONLY the unresolved questions.
+2. The agent solves ALL packet questions itself, in one pass.
+3. `apply_packet` merges the answers with the locked ones, enforces the 80% coverage floor (below it nothing is submitted and no attempt is used), fills, submits, records feedback, and returns a short receipt.
+4. If the receipt says FAILED, `prepare_packet` again returns a DELTA packet with only the still-wrong questions. Repeat until PASSED.
+
+`extract_questions` / `solve_batch` remain as fallback only, when `prepare_packet` itself errors. Verified answers are matched by option **text** (shuffle-safe) and may cross quizzes; elimination hints never cross quizzes.
+
+---
+
+## 📊 Tool Profiles & Telemetry
+
+* **Tool profiles** (`AGENTIC_TOOL_PROFILE`, see [MCP_PROFILES.md](MCP_PROFILES.md)): run a task-shaped server — `quiz`, `course`, `programming`, `peer`, `solvers`, or `full` (default). Out-of-profile calls are refused before any work happens.
+* **Telemetry**: every MCP tool call appends one JSONL line (counts/sizes only, never content) to `.assessment_cache/telemetry/tool_calls.jsonl`. View the scoreboard with:
+  ```bash
+  agentic-helper stats
+  # or: python -m quiz_pilot.telemetry
+  ```
+  Honest limit: the MCP server cannot see the host IDE's real model token counts — telemetry measures tool calls, not tokens.
 
 ---
 
@@ -278,14 +322,12 @@ causal = sim.simulate_causal(
 
 ---
 
-## 🛡️ Attempt Budget Protector & Zero-Artifact Law
+## 🛡️ Attempt Budget Protector, Retry-Until-Pass & Per-Quiz Purge
 
-1. **Attempt Budget Protector**: Prevents burning limited attempts (e.g. 3 attempts per 8 hours) by blocking submissions if confidence score is below threshold (default 80%).
-2. **Zero-Compute Diff Caching**: On Attempt 2, verified correct answers are locked in with **0 extra compute**, recalculating only missed questions.
-3. **Mandatory Post-Quiz Purge**: When an assessment is passed, all temporary caches, submissions, and screenshots are automatically wiped to keep the workspace 100% clean:
-   ```bash
-   agentic-helper clean
-   ```
+1. **Attempt Budget Protector**: Blocks submissions if genuinely-answered coverage is below the 80% floor, so a weak attempt never burns a limited attempt (e.g. 3 attempts per 8 hours). 80% is a floor, never the target.
+2. **Retry-Until-Pass**: A FAILED quiz is unfinished work. The agent re-attempts immediately in the same run — correct answers locked, wrong options eliminated, wrong questions re-solved — until it passes, Coursera locks attempts, or the 10-attempt cap is reached.
+3. **Zero-Compute Diff Caching**: On retries, verified correct answers are locked in with no extra compute; only missed questions are reworked.
+4. **Per-Quiz Purge Only**: When a quiz passes, ONLY that quiz's cache entries are purged (`purge_cache(quiz_id)`), preserving every other quiz's memory and all Host-Packet state. NEVER `purge_all()` — a full wipe is manual-only via `agentic-helper clean`, only when the user asks.
 
 ---
 
@@ -295,26 +337,26 @@ causal = sim.simulate_causal(
 | :--- | :--- | :--- |
 | `crawl-syllabus` | `agentic-helper crawl-syllabus <url>` | Scrapes full course syllabus and lists incomplete items. |
 | `auto-course` | `agentic-helper auto-course <url> [--concurrency N]` | 1-click end-to-end course automation. |
-| `multiworker` | `agentic-helper multiworker [urls...] [--concurrency N]` | Concurrently solves multiple open tabs or given URLs. |
+| `multiworker` | `agentic-helper multiworker [urls...] [--concurrency N]` | Concurrently solves multiple open tabs or given URLs (max 4). |
 | `submit-code` | `agentic-helper submit-code <path> [--wait]` | Submits programming assignment to autograder. |
 | `poll-grader` | `agentic-helper poll-grader [--timeout S]` | Polls remote autograder status and error logs. |
 | `submit-peer` | `agentic-helper submit-peer --title T --pdf P` | Submits peer report PDF and video demonstration. |
 | `complete-reviews` | `agentic-helper complete-reviews [--count N]` | Fulfills required peer evaluations with rubrics. |
-| `clean` | `agentic-helper clean` | Wipes temporary `.assessment_cache/`, submissions, and screenshots. |
+| `stats` | `agentic-helper stats [--json]` | Shows the telemetry scoreboard. |
+| `clean` | `agentic-helper clean` | Wipes temporary `.assessment_cache/`, submissions, and screenshots (manual-only). |
 | `status` | `agentic-helper status` | Checks CDP connection status to system browser. |
 
 ---
 
 ## 🧪 Testing
 
-All 28 unit tests pass in under 1 second:
+162 tests, all passing:
+
 ```bash
-pytest
-# OR
-python -m unittest discover -s tests
+python -m pytest tests -q
 ```
 ```text
-============================== 28 passed in 0.31s ==============================
+162 passed
 ```
 
 ---
@@ -322,6 +364,7 @@ python -m unittest discover -s tests
 ## 📚 Dedicated Guides
 * **[AGENTS.md](AGENTS.md)** — Operating manual and directives for autonomous AI agents.
 * **[GEMINI.md](GEMINI.md)** — Antigravity IDE configuration & `/agentic-helper` guide.
+* **[MCP_PROFILES.md](MCP_PROFILES.md)** — MCP tool profiles per task type.
 * **[WINDOWS_GUIDE.md](WINDOWS_GUIDE.md)** — Windows 10/11 PowerShell guide and troubleshooting.
 
 ---
