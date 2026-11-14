@@ -448,7 +448,7 @@ class ProgrammingAssignmentManager:
 
             return {
                 "status": "TIMEOUT",
-                "message": f"Autograder did not finish within {timeout_sec} seconds. Check browser tab manually.",
+                "message": f"Autograder still grading after {timeout_sec} seconds. Do NOT wait on this tab: work on or poll another pending assignment, then call poll_autograder_results again for this tab.",
                 "elapsed_sec": int(time.time() - start_time)
             }
 

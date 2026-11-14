@@ -94,16 +94,41 @@ class PeerReviewManager:
     def set_page(self, page):
         self.page = page
 
-    def detect_peer_task(self, url: str = "", text: str = "") -> Dict[str, Any]:
+    def detect_peer_task(self, url: str = "", text: str = "") -> Any:
         """Detect if the current page is a peer submission or review task."""
         if not url and self.page:
             url = getattr(self.page, "url", "")
         if not text and self.page:
             try:
-                text = self.page.evaluate("() => document.body.innerText")
+                res = self.page.evaluate("() => document.body.innerText")
+                if asyncio.iscoroutine(res):
+                    return self._detect_peer_task_async_helper(res, url)
+                text = res
             except Exception:
                 text = ""
 
+        return self._detect_peer_task_from_text(url, text)
+
+    async def detect_peer_task_async(self, url: str = "", text: str = "") -> Dict[str, Any]:
+        """Async variant of detect_peer_task for Playwright async pages."""
+        if not url and self.page:
+            url = getattr(self.page, "url", "")
+        if not text and self.page:
+            try:
+                text = await self.page.evaluate("() => document.body.innerText")
+            except Exception:
+                text = ""
+        return self._detect_peer_task_from_text(url, text)
+
+    async def _detect_peer_task_async_helper(self, text_coro, url: str) -> Dict[str, Any]:
+        try:
+            text = await text_coro
+        except Exception:
+            text = ""
+        return self._detect_peer_task_from_text(url, text)
+
+    def _detect_peer_task_from_text(self, url: str, text: str) -> Dict[str, Any]:
+        text = text or ""
         is_peer = "/peer/" in url or "peer-graded" in text.lower() or "peer-options" in text.lower()
         if not is_peer:
             return {"is_peer": False, "mode": None, "reviews_left": 0}

@@ -75,9 +75,10 @@ class SyllabusCrawler:
                 }
                 
                 let status = 'not_attempted';
-                if (/\bpassed\b/i.test(text) || /\bsuccess\b/i.test(text)) {
+                const lower = text.toLowerCase();
+                if (lower.includes('passed') || lower.includes('success')) {
                     status = 'passed';
-                } else if (/submitted/i.test(text)) {
+                } else if (lower.includes('submitted')) {
                     status = 'submitted';
                 }
                 

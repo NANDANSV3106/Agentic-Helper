@@ -66,3 +66,8 @@ execute_final_exam.py
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime state (never commit)
+quiz_analysis.md
+.tools/
+.pytest_cache/

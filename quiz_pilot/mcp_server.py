@@ -389,7 +389,7 @@ TOOLS = [
     },
     {
         "name": "poll_autograder_results",
-        "description": "Polls the LMS autograder results view until grading completes. Extracts score percentage, pass/fail state, and test case error logs.",
+        "description": "Polls the LMS autograder results view until grading completes. Extracts score percentage, pass/fail state, and test case error logs. When several assignments are pending, use a short timeout (30-60s) and round-robin between tabs instead of one long wait: a TIMEOUT result means still grading - work another tab, then poll again.",
         "inputSchema": {
             "type": "object",
             "properties": {

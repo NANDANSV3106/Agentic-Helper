@@ -368,6 +368,7 @@ class CourseOrchestrator:
                     "exec_command: compile and run the starter tests (WSL Ubuntu when present, else the native Windows toolchain - it fetches the portable MinGW toolchain itself if no compiler is found); fix compile/test failures from the output",
                     "exec_command: run the submission command exactly as the spec instructs (submission token / CLI); verify the reported result",
                     "on failure, fix the code from the output and resubmit - repeat until it passes or 10 attempts",
+                    "work programming assignments in parallel: up to 4 at once across any courses - while a long compile, test, or submission runs, start the next pending assignment; never wait idle on one assignment",
                 ]
             elif kind == "mininet":
                 # EXTERNAL Mininet assignment: topologies run locally under
@@ -379,6 +380,7 @@ class CourseOrchestrator:
                     "exec_command with backend=wsl: run the topology with mn --custom ... --test ... as the spec instructs; fix failures from the output",
                     "follow the spec's submission instructions (output/token) via exec_command; verify the reported result",
                     "on failure, fix and rerun - repeat until it passes or 10 attempts",
+                    "work programming assignments in parallel: up to 4 at once across any courses - while a long topology run or submission runs, start the next pending assignment; never wait idle on one assignment",
                 ]
             else:
                 item_res["next_steps"] = [
@@ -387,6 +389,7 @@ class CourseOrchestrator:
                     "submit_code_file: upload and submit the solution",
                     "poll_autograder_results: read score and error log",
                     "on grader failure, fix the code from the error log and resubmit - repeat until the grader passes or 10 attempts",
+                    "work programming assignments in parallel: up to 4 tabs at once across any courses - while this grader runs, start the next pending assignment in another tab and poll this one again later; never wait idle on one grader",
                 ]
 
         elif item_type == "peer_review":

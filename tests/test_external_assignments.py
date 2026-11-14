@@ -305,3 +305,27 @@ def test_instruction_files_carry_external_assignment_rule():
         assert "submission token" in text, f"{rel}: no submission-token wording"
         assert "native Windows toolchain" in text, f"{rel}: no WSL-free fallback wording"
         assert "Linux VM" in text, f"{rel}: no Mininet-needs-Linux wording"
+
+
+def test_instruction_files_carry_parallel_programming_rule():
+    for rel in INSTRUCTION_FILES:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        assert "Parallel Programming Rule" in text, f"{rel}: parallel rule missing"
+        assert "4 tabs" in text, f"{rel}: no 4-tab wording"
+        assert "round-robin" in text, f"{rel}: no round-robin polling wording"
+        assert "TIMEOUT" in text, f"{rel}: no TIMEOUT-means-grading wording"
+        assert "no matter which courses" in text, f"{rel}: no cross-course wording"
+
+
+def test_orchestrator_branches_carry_parallel_hint(monkeypatch):
+    for spec in (
+            {"title": "PA", "kind": "upload", "wsl_required": False,
+             "instructions_snippet": "upload your file"},
+            {"title": "MP1", "kind": "cpp_cli", "wsl_required": True,
+             "instructions_snippet": "submission token"},
+            {"title": "PA2", "kind": "mininet", "wsl_required": True,
+             "instructions_snippet": "mininet topology"}):
+        res = _run_programming_branch(monkeypatch, spec)
+        joined = " ".join(res["next_steps"])
+        assert "parallel" in joined, f"{spec['kind']}: no parallel hint"
+        assert "never wait idle" in joined, f"{spec['kind']}: no no-idle-wait hint"
